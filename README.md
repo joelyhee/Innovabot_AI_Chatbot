@@ -297,5 +297,7 @@ innovabot/
 **Project**: GAIS Assignment 1 - Part 2: Chatbot Applications  
 **Submission Date**: 1 February 2026  
 **Academic Year**: 2025/26  
-**Data Source**: EngagePro Company Brochure (fictional company created for educational purposes)
+
+**Data Source**: EngagePro Company Brochure (fictional company created for educational purposes)  
+
 **Code License**: Educational use only. Not licensed for commercial deployment.
