@@ -163,14 +163,6 @@ innovabot/
 
 ---
 
-### **config.py**
-**Purpose**: Centralized configuration management
-
-**Contents**:
-- Environment variable loading via `python-dotenv`
-- OpenAI ChatGPT-4o-mini instance configuration (temperature: 0.3)
-- SentenceTransformer embeddings model (offline embedding fallback)
-
 **Design Rationale**:
 - **Low Temperature (0.3)**: Balances creativity with factual accuracy for business queries
 - **Alternative Embeddings**: Sentence-transformers enables offline operation without OpenAI API dependency
@@ -198,17 +190,6 @@ innovabot/
 - Team size, location, and contact information
 
 **Usage**: Parsed by `build_index.py` to create FAISS vector store for domain-specific RAG retrieval
-
----
-
-### **ASG1_Report_JoelyLimKeiCin.docx**
-**Purpose**: Comprehensive technical documentation and analysis
-
-**Key Sections**:
-1. **Part 1**: Conditional diffusion models for ASL alphabet generation (separate component)
-2. **Part 2**: InnovaBot architecture, implementation details, and evaluation methodology
-3. **Reflection**: Learning outcomes and insights from the Generative AI Solutions module
-
 ---
 
 ## 🛠️ Technical Stack
