@@ -456,28 +456,28 @@ def apply_guardrails(user_query):
     Comprehensive guardrails combining all checks.
     """
     
-    # 1. Nonsense Detection 
-    is_nonsense, nonsense_reason = detect_nonsense(user_query)
-    if is_nonsense:
-        return False, "I'm sorry, I didn't quite understand that. Could you please rephrase? I'm here to help with EngagePro products and services! 😊"
+    # 1. PII Detection
+    pii_detected, pii_type = detect_pii(user_query)
+    if pii_detected:
+        return False, f"⚠️ For your security, please do not share {pii_type}."
     
     # 2. Length check
     if len(user_query) > 1000:
         return False, "Your query is too long. Please keep it under 1000 characters."
     
-    # 3. PII Detection
-    pii_detected, pii_type = detect_pii(user_query)
-    if pii_detected:
-        return False, f"⚠️ For your security, please do not share {pii_type}."
-    
-    # 4. Prompt Injection
+    # 3. Prompt Injection
     if detect_prompt_injection(user_query):
         return False, "I'm only able to assist with EngagePro products, services, and general knowledge topics. I'm unable to take on other roles! 😊"
     
-    # 5. Content Safety
+    # 4. Content Safety
     is_safe_content, reason = check_content_safety_llm(user_query)
     if not is_safe_content:
         return False, f"I cannot assist with that request. {reason}"
+    
+     # 5. Nonsense Detection 
+    is_nonsense, nonsense_reason = detect_nonsense(user_query)
+    if is_nonsense:
+        return False, "I'm sorry, I didn't quite understand that. Could you please rephrase? I'm here to help with EngagePro products and services! 😊"
     
     return True, "Query is safe"
 
