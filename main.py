@@ -94,7 +94,6 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.utilities import WikipediaAPIWrapper
 from crewai import Agent, Task, Crew
 import re
-from collections import Counter
 
 # LOAD ENVIRONMENT
 load_dotenv()
@@ -471,52 +470,84 @@ def search_engagepro(query, top_k=5, threshold=1.20):
     
     return formatted_results
 
-def route_query(query):
+import re
+from collections import Counter
+
+def is_greeting(text: str) -> bool:
+    text = text.lower().strip()
+    # keep only letters and spaces
+    text = re.sub(r"[^a-z\s]", "", text)
+
+    greetings = {"hi", "hello", "hey", "thanks", "thank you", "bye", "goodbye",
+                 "good morning", "good afternoon", "good evening"}
+    words = text.split()
+
+    # exact word match
+    if any(word in greetings for word in words):
+        return True
+
+    # full-string greeting (e.g. "good morning")
+    if text in greetings:
+        return True
+
+    # stretched hello ("helloooo", "hellllloooo")
+    if re.fullmatch(r"he+l+o+", text):
+        return True
+
+    return False
+
+def route_query(query: str) -> str:
     """
     Uses LLM to intelligently route queries.
-    Returns: 'engagepro' or 'wikipedia'
+    Returns: 'general', 'engagepro' or 'wikipedia'
     """
-    # Check for greetings/casual chat first
-    greetings = ["hi", "hello", "hey", "thanks", "thank you", "bye", "goodbye", "good morning", "good afternoon", "good evening"]
     query_lower = query.lower().strip()
-    
-    # Check if query is exactly a greeting or starts with greeting + space
-    if any(greeting == query_lower or query_lower.startswith(greeting + " ") for greeting in greetings):
+
+    # 1) Hard-rule: clear greeting / casual chat → general
+    if is_greeting(query_lower):
         return "general"
-    
-    routing_prompt = f"""You are a query classification system. Classify the following query into exactly ONE category:
+
+    # 2) Ask LLM to classify into 3 categories
+    routing_prompt = f"""You are a query classification system. 
+Classify the following query into exactly ONE category:
 
 Categories:
+- "general": Greetings, casual chat, small talk, or personal questions to the chatbot (e.g. "how are you", "tell me a joke", "can you say hi", "who are you", "what can you do")
 - "engagepro": Questions specifically about EngagePro company, its products (InnovaBot, CX Transformer), services, capabilities, pricing, or how it can help businesses
 - "wikipedia": General knowledge questions, technical definitions, historical facts, scientific concepts, or any topic NOT specifically about EngagePro company
 
 Examples:
+- "hi" → general
+- "hello!" → general
+- "can u say hi" → general
+- "how are you" → general
+- "tell me a joke" → general
+- "who are you" → general
 - "What products does EngagePro offer?" → engagepro
-- "How can EngagePro help my business?" → engagepro  
+- "How can EngagePro help my business?" → engagepro
 - "Who invented the computer?" → wikipedia
 - "What is artificial intelligence?" → wikipedia
-- "Tell me about machine learning" → wikipedia
 
 Query: "{query}"
 
-Respond with ONLY ONE WORD (lowercase): engagepro or wikipedia"""
+Respond with ONLY ONE WORD (lowercase): general, engagepro, or wikipedia
+"""
 
     try:
         response = llm.invoke(routing_prompt)
         route = response.content.strip().lower()
-        
-        # Validate response
-        if 'engagepro' in route:
-            return 'engagepro'
-        elif 'wikipedia' in route or 'wiki' in route:
-            return 'wikipedia'
+
+        if "general" in route:
+            return "general"
+        elif "engagepro" in route:
+            return "engagepro"
+        elif "wikipedia" in route or "wiki" in route:
+            return "wikipedia"
         else:
-            # Default fallback
-            return 'wikipedia'  # Safer to default to wiki for unclear queries
-            
+            return "wikipedia"  # safe fallback
     except Exception as e:
         print(f"Routing error: {e}")
-        return 'wikipedia'  # Safe fallback
+        return "wikipedia"
 
 def generate_followup_questions(user_query, route):
     """Generate relevant follow-up questions based on the query"""
@@ -562,7 +593,7 @@ Examples:
 - What are the main benefits?
 - Who invented this technology?
 
-Your 3 questions:
+The 3 questions:
 """
     else:  # general
         return None  # No follow-ups for greetings
@@ -591,15 +622,18 @@ def handle_query(user_query):
     
     # Process based on route
     if route == "general":
-        # Handle greetings/casual chat directly with LLM
-        casual_prompt = f"""You are InnovaBot, EngagePro's friendly AI assistant.
+           # Handle greetings/casual chat directly with LLM
+        casual_prompt = (
+            f"{SYSTEM_PROMPT}\n\n"
+            "Additional instructions for casual chat:\n"
+            f'User said: "{user_query}"\n\n'
+            "- Respond naturally and warmly (1-2 sentences max)\n"
+            "- If greeting: introduce as InnovaBot from EngagePro, offer help with products/services\n"
+            "- If thanks: acknowledge politely, offer further assistance\n"
+            "- If joke/other: keep it short and professional, redirect to EngagePro topics\n"
+            "- End by offering help with EngagePro products or AI topics."
+        )
 
-        User said: {user_query}
-
-        Respond naturally and warmly. Keep it brief (1-2 sentences).
-        If it's a greeting, introduce yourself and offer to help with EngagePro information or general AI topics.
-        If it's thanks, acknowledge politely and offer further assistance.
-        """
         response = llm.invoke(casual_prompt)
         response_with_source = f"{response.content}<br><br><span class='source-badge source-general'>💬 General Chat</span>"
         return response_with_source, "general"
