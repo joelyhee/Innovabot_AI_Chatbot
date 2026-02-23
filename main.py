@@ -94,6 +94,8 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.utilities import WikipediaAPIWrapper
 from crewai import Agent, Task, Crew
 import re
+import traceback
+from collections import Counter
 
 # LOAD ENVIRONMENT
 load_dotenv()
@@ -146,7 +148,6 @@ def load_vectorstore():
     except Exception as e:
         st.error(f" Error loading vector store: {e}")
         st.error(f"Error type: {type(e).__name__}")
-        import traceback
         st.code(traceback.format_exc())
         return None
 
@@ -340,9 +341,19 @@ def detect_prompt_injection(text):
         r'you are now',
         r'act as',
         r'pretend you',
+        r'pretend to', 
+        r'pretend to be',        
+        r'can you pretend',      
+        r'roleplay',             
+        r'play the role',        
+        r'switch roles',         
+        r'be a teacher',         
+        r'be a doctor',          
+        r'be an expert',         
         r'bypass',
         r'override',
     ]
+
     
     text_lower = text.lower()
     for pattern in injection_patterns:
@@ -371,7 +382,6 @@ def detect_nonsense(text):
     # Check 3: Repeated characters (e.g., "aaaaaaa", "!!!!!!", "?????????")
     if len(cleaned) >= 5:
         # Check if more than 70% are the same character
-        from collections import Counter
         char_counts = Counter(cleaned.lower())
         most_common_char, count = char_counts.most_common(1)[0]
         if count / len(cleaned) > 0.7:
@@ -410,7 +420,36 @@ def detect_nonsense(text):
         if pattern in text_lower and len(cleaned) > 5:
             return True, "Keyboard mashing detected"
     
+    # Check 8: Single LLM check — handles greetings AND gibberish together
+    combined_prompt = (
+        "You are a text validator for a business chatbot.\n"
+        "Determine if the following input is VALID — meaning it is a greeting, "
+        "farewell, casual chat, OR a meaningful question/query "
+        "(including typos, slang, stretched words like 'byeeeee', or brand names).\n\n"
+        "Answer ONLY 'YES' if it is valid, or 'NO' if it is gibberish/random characters.\n\n"
+        "Examples:\n"
+        "- 'hi' → YES\n"
+        "- 'byeeeeeee' → YES\n"
+        "- 'heyyyy' → YES\n"
+        "- 'how r u' → YES\n"
+        "- 'tell me a joke' → YES\n"
+        "- 'what is InnovaBot' → YES\n"
+        "- 'CX Transformer price' → YES\n"
+        "- 'aisojwsidojo' → NO\n"
+        "- 'xkwzpqm' → NO\n"
+        "- 'asjdhaksjdh' → NO\n\n"
+        f'Input: "{cleaned}"\n\n'
+        "Answer (YES or NO):"
+    )
+    try:
+        resp = llm.invoke(combined_prompt)
+        if "NO" in resp.content.strip().upper():
+            return True, "Unrecognizable text detected"
+    except:
+        pass
+
     return False, ""
+
 
 def apply_guardrails(user_query):
     """
@@ -420,7 +459,7 @@ def apply_guardrails(user_query):
     # 1. Nonsense Detection 
     is_nonsense, nonsense_reason = detect_nonsense(user_query)
     if is_nonsense:
-        return False, "I don't understand that. Could you please ask a clear question?"
+        return False, "I'm sorry, I didn't quite understand that. Could you please rephrase? I'm here to help with EngagePro products and services! 😊"
     
     # 2. Length check
     if len(user_query) > 1000:
@@ -433,7 +472,7 @@ def apply_guardrails(user_query):
     
     # 4. Prompt Injection
     if detect_prompt_injection(user_query):
-        return False, "Invalid query format detected. Please rephrase your question naturally."
+        return False, "I'm only able to assist with EngagePro products, services, and general knowledge topics. I'm unable to take on other roles! 😊"
     
     # 5. Content Safety
     is_safe_content, reason = check_content_safety_llm(user_query)
@@ -470,31 +509,33 @@ def search_engagepro(query, top_k=5, threshold=1.20):
     
     return formatted_results
 
-import re
-from collections import Counter
-
 def is_greeting(text: str) -> bool:
-    text = text.lower().strip()
-    # keep only letters and spaces
-    text = re.sub(r"[^a-z\s]", "", text)
-
-    greetings = {"hi", "hello", "hey", "thanks", "thank you", "bye", "goodbye",
-                 "good morning", "good afternoon", "good evening"}
-    words = text.split()
-
-    # exact word match
-    if any(word in greetings for word in words):
-        return True
-
-    # full-string greeting (e.g. "good morning")
-    if text in greetings:
-        return True
-
-    # stretched hello ("helloooo", "hellllloooo")
-    if re.fullmatch(r"he+l+o+", text):
-        return True
-
-    return False
+    text_clean = text.lower().strip()
+    
+    greeting_prompt = (
+        "You are a greeting detector for a chatbot.\n"
+        "Determine if the following input is a greeting, farewell, or casual social expression "
+        "(including stretched/informal versions like 'byeeeee', 'heyyyy', 'hiiiii', 'thaaaanks').\n\n"
+        "Answer ONLY 'YES' if it is a greeting/farewell/casual chat, or 'NO' if it is not.\n\n"
+        "Examples:\n"
+        "- 'hi' → YES\n"
+        "- 'byeeeeeee' → YES\n"
+        "- 'heyyyy' → YES\n"
+        "- 'good morning!' → YES\n"
+        "- 'thanks a lot' → YES\n"
+        "- 'what is machine learning' → NO\n"
+        "- 'how does InnovaBot work' → NO\n"
+        "- 'tell me a joke' → YES\n"
+        "- 'who are you' → YES\n\n"
+        f'Input: "{text_clean}"\n\n'
+        "Answer (YES or NO):"
+    )
+    try:
+        resp = llm.invoke(greeting_prompt)
+        return "YES" in resp.content.strip().upper()
+    except:
+        basic_greetings = {"hi", "hello", "hey", "bye", "goodbye", "thanks"}
+        return any(word in text_clean for word in basic_greetings)
 
 def route_query(query: str) -> str:
     """
